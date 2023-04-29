@@ -1,0 +1,67 @@
+import time
+import ccxt
+import sqlite3
+
+kucoin = ccxt.kucoin({
+    'enableRateLimit': True,
+    'apiKey': '',
+    'secret': '',
+    'password': '',
+})
+conn = sqlite3.connect('rgregtgeht5h.db')
+c = conn.cursor()
+
+c.execute('''CREATE TABLE IF NOT EXISTS prices
+             (symbol text, price integer)''')
+conn.commit()
+
+monedacomprada = 0
+while True:
+  
+    try:
+        ticker = kucoin.fetch_tickers()
+        for symbol in ticker:
+            tickers = kucoin.fetch_ticker(symbol)
+            price = tickers['last']
+            c.execute("INSERT INTO prices VALUES (?, ?)", (symbol, price))
+            conn.commit()
+            
+            c.execute("SELECT price FROM prices WHERE symbol = ?", (symbol,))
+            prices = c.fetchall()
+            if not prices:
+                continue
+            minprice= min(prices)[0]
+            
+            if price >= 1.001 * minprice and monedacomprada == 0:
+                amount = 5/price
+                try:
+                    buy_order = kucoin.create_order(symbol, 'market', 'buy', amount, None, {'type': 'market', 'side': 'buy', 'amount': amount})
+                    order_info = kucoin.fetch_order(buy_order['id'], symbol)
+                    if order_info['status'] == 'closed':
+                        monedacomprada += 1
+                        buy_price = float(order_info['average'])
+                        print("Coin " + symbol + " has been bought at " + str(buy_price))
+                        
+                        stoploss= float(buy_price * 0.999)
+                        takeprofit = float(1.001 * buy_price)
+                        order_params = {
+                            'type': 'limit',
+                            'side': 'sell',
+                            'amount': amount,
+                            'price': takeprofit,
+                            'stopPrice': stoploss,
+                            'remark': 'TP'
+                        }
+                        sellorder = kucoin.create_order(symbol, 'limit', amount, takeprofit, order_params)
+                        sellorderinfo = kucoin.fetch_order(sellorder['id'], symbol)
+                        if sellorderinfo['status'] == 'closed':
+                          sellprice = order_info['average']
+                          print ("Coin has been sold at" + str(sellprice))
+
+                        break 
+                except Exception as e:
+                    print ("Error:", e)
+                    break
+      #time.sleep(0.001)
+    except Exception as e:
+        print(e)
